@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Dukes NFL Ownership Auction</title>
+
+    <!-- update the version number as needed -->
+    <script defer src="/__/firebase/5.4.1/firebase-app.js"></script>
+    <!-- include only the Firebase features as you need -->
+    <script defer src="/__/firebase/5.4.1/firebase-auth.js"></script>
+    <script defer src="/__/firebase/5.4.1/firebase-database.js"></script>
+    <script defer src="/__/firebase/5.4.1/firebase-functions.js"></script>
+    <script defer src="/__/firebase/5.4.1/firebase-storage.js"></script>
+    <!-- initialize the SDK after all desired features are loaded -->
+    <script defer src="/__/firebase/init.js"></script>
+
+    <style media="screen">
+      body { background: #ECEFF1; color: rgba(0,0,0,0.87); font-family: Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; }
+      #message { background: white; max-width: 360px; margin: 100px auto 16px; padding: 32px 24px; border-radius: 3px; }
+      #message h2 { color: #ffa100; font-weight: bold; font-size: 16px; margin: 0 0 8px; }
+      #message h1 { font-size: 24px; font-weight: bold; color: rgba(0,0,0,0.6); margin: 0 0 16px;}
+      #message h3 { font-size: 20px; font-weight: bold; color: #00ff10; margin:0 0 16px;}
+      #message h4 { font-size: 20px; font-weight: bold; color: #ff00f0; margin:0 0 16px;}
+      #message p { line-height: 140%; margin: 16px 0 24px; font-size: 14px; }
+      #message button { display: block; text-align: center; width:100%;background: #039be5; text-transform: uppercase; text-decoration: none; color: white; padding: 16px; border-radius: 4px; }
+      #message, #message button { box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24); }
+      .column {float:left;width:50%;}
+      .row:after {content:"";display:table;clear:both;}
+      .NFCSouth {color: #4286f4;}
+      .NFCWest {color: #e80606;}
+      .NFCNorth {color: #66180a;}
+      .NFCEast {color: #06e891;}
+      .AFCWest {color: #d306aa;}
+      .AFCSouth {color: #ddd00f;}
+      .AFCNorth {color: #9b0937;}
+      .AFCEast {color: #e2820d;}
+      .owner {font-weight: bold; color:#0b0c0c }
+      #load { color: rgba(0,0,0,0.4); text-align: center; font-size: 13px; }
+      @media (max-width: 600px) {
+        body, #message { margin-top: 0; background: white; box-shadow: none; }
+        body { border-top: 16px solid #ffa100; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="message">
+      <h2>Dukes NFL Ownership Auction - <span id="username"></span></h2>
+      <div id="user">
+        <h4>Enter Key:<input type="text" id='userkey'></h4>
+        <button type="button" onclick='userlogin()'>Submit</button>
+      </div>
+      <div id="draftAction" style="display:none">
+        <h4>Team: <input type="text" id="draftteam"></h4>
+        <button type="button" onclick='startDraft()'>Start</button>
+        <span/><span/><span/>
+        <button type="button" onclick='endDraft()'>End</button>
+      </div>
+      <div id="showAuction" style="display:none">
+        <h1 id="currentTeam"></h1>
+        <div class="row">
+          <div class="column">
+            <h3>Owner:<span id="currentOwner"></span></h3>
+            <h4>Price:<span id="currentBidValue"></span></h4>
+          </div>
+          <div class="column">
+            <h1 id="bidCounter">TIME</h1>
+          </div>
+        </div>
+        <span id="bidTime"></span>
+        <span></span>
+        <button type="button" onclick="bidClick()" id="bidbutton">Bid</button>
+        <span></span>
+        <ol id="teams"></ol>
+      </div>
+    </div>
+    <p id="load">&copy; 2019 apatti. All Rights Reserved</p>
+    <script>
+      var bidTimer=null;
+      var player="";
+      var lastUpdateTime=null;
+      document.addEventListener('DOMContentLoaded', function()
+      {
+        try
+        {
+          let db = firebase.database();
+          db.ref("Teams").orderByChild('order').on("value",function(snapshot)
+          {
+            var teams = snapshot.val();
+            document.getElementById('teams').innerHTML="";
+            snapshot.forEach(function(childSnapshot)
+            {
+              var childKey = childSnapshot.key;
+              var childData = childSnapshot.val();
+              var li = document.createElement('li');
+              var span = document.createElement('span');
+              span.className=childData.division;
+              var ownerspan = document.createElement('span');
+              ownerspan.append(childData.owner);
+              if(childData.owner!="Available")
+              {
+                  ownerspan.className = "owner";
+              }
+
+              var teamspan = document.createElement('span');
+              teamspan.append(childKey+" - ");
+              var pricespan = document.createElement('span');
+              pricespan.append(" - " +childData.price);
+              //span.append(childKey+"  -  "+ownerspan.outerHtml+"  -   $"+childData.price);
+              span.append(teamspan,ownerspan,pricespan);
+              li.appendChild(span);
+              document.getElementById('teams').appendChild(li);
+            });
+          });
+
+          db.ref("CurrentTeam").on("value",function(snapshot)
+          {
+            document.getElementById('currentTeam').innerHTML = snapshot.val().name;
+            document.getElementById('currentOwner').innerHTML=snapshot.val().owner;
+            document.getElementById('currentBidValue').innerHTML=snapshot.val().price;
+            document.getElementById('bidTime').innerHTML=new Date(snapshot.val().updatedAt);
+            //lastUpdateTime = snapshot.val().updatedAt;
+            var updateTime = new Date(snapshot.val().updatedAt).getTime();
+            lastUpdateTime = updateTime;
+            var distance=Math.floor(((updateTime+25000)-(new Date().getTime()))/1000);
+                  //var distance=31;
+            if(bidTimer!=null)
+            {
+              clearInterval(bidTimer);
+            }
+            bidTimer = setInterval(function()
+            {
+                  //var distance = new Date().getTime()-updateTime;
+              distance--;
+              if(distance<=0)
+              {
+                clearInterval(bidTimer);
+                bidTimer=null;
+                document.getElementById('bidCounter').innerHTML="Expired";
+              }
+              else {
+                document.getElementById('bidCounter').innerHTML=distance;
+              }
+            },1000);
+          });
+        } catch (e)
+        {
+          console.error(e);
+          //document.getElementById('load').innerHTML = 'Error loading the Firebase SDK, check the console.';
+        }
+      });
+      function bidClick()
+      {
+        if(bidTimer==null)
+        {
+          return;
+        }
+        if(document.getElementById('currentOwner').innerHTML==document.getElementById("username").innerHTML)
+        {
+          return;
+        }
+        if(Math.floor(((lastUpdateTime+25000)-(new Date().getTime()))/1000)<=0)
+        {
+          return;
+        }
+
+        let teamId=document.getElementById('currentTeam').innerText;
+        let bidValue = document.getElementById('currentBidValue').innerText;
+        let db = firebase.database();
+        var updates={};
+        updates['/CurrentTeam/price']=parseInt(bidValue)+1;
+        updates['/CurrentTeam/owner']=document.getElementById("username").innerHTML;
+        updates['/CurrentTeam/ownerkey']=player;
+        updates['/CurrentTeam/updatedAt']=firebase.database.ServerValue.TIMESTAMP;
+        updates['/CurrentTeam/state']='update';
+        db.ref().update(updates);
+      }
+      function startDraft()
+      {
+        var draftteam=document.getElementById("draftteam").value;
+        var url ="https://us-central1-nflownership.cloudfunctions.net/startNewAuction?team="+draftteam+"&user=ADMINKEY"; //Replace with actual key value
+        var form = document.createElement("form",{action:url,
+                                                  method:"POST",
+                                                  style: "display: none"});
+        form.action = url;
+        form.method="Post";
+        document.body.appendChild(form);
+        form.submit();
+        document.body.removeChild(form);
+      }
+
+      function endDraft()
+      {
+        var draftteam=document.getElementById("draftteam").value;
+        var url ="https://us-central1-nflownership.cloudfunctions.net/endCurrentAuction?team="+draftteam+"&user=ADMINKEY";//Replace with actual key value
+        var form = document.createElement("form",{style: "display: none"});
+        form.action = url;
+        form.method="Post";
+        document.body.appendChild(form);
+        form.submit();
+        document.body.removeChild(form);
+      }
+
+    	function userlogin()
+      {
+        player = document.getElementById("userkey").value;
+        if(player=="")
+        {
+          alert("Enter valid key");
+          return;
+        }
+        if(player=="ZXCVBNM")
+        {
+          document.getElementById("draftAction").style.display="block";
+          document.getElementById("user").style.display="none";
+          return;
+        }
+        let db = firebase.database();
+        db.ref('owners/'+player).once('value').then(function(snapshot)
+        {
+          if(snapshot.val()!==null)
+          {
+            document.getElementById("showAuction").style.display="block";
+            document.getElementById("username").innerHTML=snapshot.val();
+            document.getElementById("user").style.display="none";
+            if(snapshot.val()=="Viewer")
+            {
+              document.getElementById("bidbutton").style.display="none";
+            }
+          }
+          else
+          {
+            alert("Invalid key");
+          }
+        });
+      }
+
+    </script>
+  </body>
+</html>
